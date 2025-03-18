@@ -1,6 +1,7 @@
 import os
 import subprocess
 import logging
+import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 
@@ -23,7 +24,29 @@ if not os.path.exists(TOKEN_FILE):
 with open(TOKEN_FILE, "r") as f:
     TOKEN = f.read().strip()
 
-# Function to transcribe audio
+# Secondary bot details
+SECONDARY_BOT_TOKEN = "SECONDARY_BOT_TOKEN_HERE"
+SECONDARY_BOT_API = f"https://api.telegram.org/bot{SECONDARY_BOT_TOKEN}/sendAudio"
+
+# Function to forward request to another bot and retrieve its response
+def forward_to_secondary_bot(file_path, chat_id):
+    try:
+        with open(file_path, "rb") as audio_file:
+            files = {"audio": audio_file}
+            data = {"chat_id": chat_id}
+            response = requests.post(SECONDARY_BOT_API, files=files, data=data)
+
+        if response.status_code == 200:
+            json_response = response.json()
+            return json_response.get("result", {}).get("text", None)  # Extract the transcribed text
+        else:
+            logger.warning(f"Secondary bot error: {response.text}")
+            return None
+    except Exception as e:
+        logger.error(f"Error forwarding to secondary bot: {e}")
+        return None
+
+# Function to transcribe audio locally
 def transcribe_audio(audio_path):
     wav_path = audio_path.replace(".mp3", ".wav")
     
@@ -36,7 +59,7 @@ def transcribe_audio(audio_path):
     # ./build/bin/whisper-cli -m models/ggml-tiny.bin -f samples/jfk.wav
     # ./whisper.cpp/build/bin/whisper-cli -m whisper.cpp/models/ggml-tiny.bin -f audio/sample.wav -l uk
     result = subprocess.run(["./whisper.cpp/build/bin/whisper-cli", "-m", WHISPER_MODEL, "-f", wav_path, "-l", "uk"], capture_output=True, text=True)
-    logger.info(f"Transcription result: {result}")
+    logger.info(f"Transcription result: {result.stdout.strip()}")
     
     return result.stdout.strip()
 
@@ -53,6 +76,13 @@ async def handle_audio(update: Update, context: CallbackContext) -> None:
     
    await update.message.reply_text("Обробляю... Це може зайняти деякий час.")
     
+    # Try forwarding to the secondary bot first
+    transcribed_text = forward_to_secondary_bot(file_path, update.message.chat_id)
+    if transcribed_text:
+        await update.message.reply_text(f"Transcribed by secondary bot:\n{transcribed_text}")
+        return
+    
+    # If the secondary bot fails, process locally
     try:
         text = transcribe_audio(file_path)
         await update.message.reply_text(f"Розпізнаний текст:\n{text}")
