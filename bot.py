@@ -16,6 +16,13 @@ WHISPER_MODEL = "whisper.cpp/models/ggml-small.bin"  # Using small model
 # Ensure the directory exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
 
+# Load bot token from a file
+TOKEN_FILE = "bot_token.txt"
+if not os.path.exists(TOKEN_FILE):
+    raise FileNotFoundError(f"Token file '{TOKEN_FILE}' not found.")
+with open(TOKEN_FILE, "r") as f:
+    TOKEN = f.read().strip()
+
 # Function to transcribe audio
 def transcribe_audio(audio_path):
     wav_path = audio_path.replace(".mp3", ".wav")
@@ -59,7 +66,6 @@ async def start(update: Update, context: CallbackContext) -> None:
 
 # Main function to run the bot
 def main():
-    TOKEN = "xxxx"  # Insert your token
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
