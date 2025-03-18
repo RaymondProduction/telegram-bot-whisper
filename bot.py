@@ -11,8 +11,16 @@ logger = logging.getLogger(__name__)
 
 # Directory for storing audio files
 AUDIO_DIR = "audio"
-#WHISPER_MODEL = "whisper.cpp/models/ggml-tiny.bin"  # Using tiny model
-WHISPER_MODEL = "whisper.cpp/models/ggml-small.bin"  # Using small model
+
+# Load model path from a file
+MODEL_PATH_FILE = "model_path.txt"
+if not os.path.exists(MODEL_PATH_FILE):
+    raise FileNotFoundError(f"Model path file '{MODEL_PATH_FILE}' not found.")
+with open(MODEL_PATH_FILE, "r") as f:
+    WHISPER_MODEL = f.read().strip()
+
+logger.info(f"Loaded Whisper model path: {WHISPER_MODEL}") 
+THREADS = "18"  # Number of threads for Whisper.cpp
 
 # Ensure the directory exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -54,11 +62,19 @@ def transcribe_audio(audio_path):
     subprocess.run(["ffmpeg", "-i", audio_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path], check=True)
     
     logger.info("Starting transcription...")
-    
+    logger.info(f"Starting WHISPER_MODEL {WHISPER_MODEL}")
+    logger.info(f"Starting wav_path {wav_path}")
+    logger.info(f"Starting THREADS {THREADS}")
     # Run Whisper.cpp
     # ./build/bin/whisper-cli -m models/ggml-tiny.bin -f samples/jfk.wav
     # ./whisper.cpp/build/bin/whisper-cli -m whisper.cpp/models/ggml-tiny.bin -f audio/sample.wav -l uk
-    result = subprocess.run(["./whisper.cpp/build/bin/whisper-cli", "-m", WHISPER_MODEL, "-f", wav_path, "-l", "uk"], capture_output=True, text=True)
+    result = subprocess.run(
+        ["./whisper.cpp/build/bin/whisper-cli",
+          "--model", WHISPER_MODEL, 
+          "--file", wav_path,
+          "--no-timestamps", "true",
+          "--language", "uk",
+          "--threads", THREADS], capture_output=True, text=True)
     logger.info(f"Transcription result: {result.stdout.strip()}")
     
     return result.stdout.strip()
@@ -67,14 +83,13 @@ def transcribe_audio(audio_path):
 async def handle_audio(update: Update, context: CallbackContext) -> None:
     file = update.message.voice or update.message.audio
     if not file:
-   await update.message.reply_text("Надішліть голосове або аудіофайл у MP3.")
-        return
-    
+      await update.message.reply_text("Надішліть голосове або аудіофайл у MP3.")
+      return
     file_obj = await file.get_file()
     file_path = os.path.join(AUDIO_DIR, f"{file.file_id}.mp3")
     await file_obj.download_to_drive(custom_path=file_path)
     
-   await update.message.reply_text("Обробляю... Це може зайняти деякий час.")
+    await update.message.reply_text("Обробляю... Це може зайняти деякий час.")
     
     # Try forwarding to the secondary bot first
     transcribed_text = forward_to_secondary_bot(file_path, update.message.chat_id)

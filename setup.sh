@@ -17,7 +17,8 @@ make
 
 # Prompt user to select a model
 default_model="small"
-echo "Available models: tiny, base, small, medium, large"
+#Display available models: "
+bash models/download-ggml-model.sh
 read -p "Enter model name (or press Enter to use '$default_model'): " model
 model=${model:-$default_model}  # Use default model if none is provided
 
@@ -27,6 +28,10 @@ bash models/download-ggml-model.sh $model
 
 # Return to the original directory
 cd ..
+
+# Prepare Python environment 
+python3 -m venv venv
+source venv/bin/activate
 
 # Install Python dependencies
 echo "🔹 Installing Python dependencies..."
