@@ -23,7 +23,7 @@ THREADS = 18  # Number of threads for Whisper
 torch.set_num_threads(THREADS)
 
 # Load model once at startup
-model = whisper.load_model(MODEL)
+model = whisper.load_model(MODEL, device = "cpu")
 
 # Initialize Flask app
 app = Flask(__name__)
