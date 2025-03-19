@@ -1,26 +1,37 @@
+import whisper
 import os
-import subprocess
 import logging
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import torch
+
+available_models = whisper.available_models()
+print(f"Available models: {available_models}")
+
+# Directory for storing audio files
+AUDIO_DIR = "audio"
+MODEL = "small"
+
+THREADS = 4  # Number of threads for Whisper.cpp
+torch.set_num_threads(THREADS)
+
+# Load model once at startup
+model = whisper.load_model(MODEL)
 
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Directory for storing audio files
-AUDIO_DIR = "audio"
 
 # Load model path from a file
-MODEL_PATH_FILE = "model_path.txt"
-if not os.path.exists(MODEL_PATH_FILE):
-    raise FileNotFoundError(f"Model path file '{MODEL_PATH_FILE}' not found.")
-with open(MODEL_PATH_FILE, "r") as f:
-    WHISPER_MODEL = f.read().strip()
+# MODEL_PATH_FILE = "model_path.txt"
+# if not os.path.exists(MODEL_PATH_FILE):
+#     raise FileNotFoundError(f"Model path file '{MODEL_PATH_FILE}' not found.")
+# with open(MODEL_PATH_FILE, "r") as f:
+#     WHISPER_MODEL = f.read().strip()
 
-logger.info(f"Loaded Whisper model path: {WHISPER_MODEL}") 
-THREADS = "4"  # Number of threads for Whisper.cpp
+# logger.info(f"Loaded Whisper model path: {WHISPER_MODEL}") 
 
 # Ensure the directory exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -33,13 +44,7 @@ with open(TOKEN_FILE, "r") as f:
     TOKEN = f.read().strip()
 
 # Secondary bot details
-# Load secondary bot token from a file
-SECONDARY_TOKEN_FILE = "second_bot_token.txt"
-if not os.path.exists(SECONDARY_TOKEN_FILE):
-    raise FileNotFoundError(f"Secondary bot token file '{SECONDARY_TOKEN_FILE}' not found.")
-with open(SECONDARY_TOKEN_FILE, "r") as f:
-    SECONDARY_BOT_TOKEN = f.read().strip()
-SECONDARY_BOT_API = f"https://api.telegram.org/bot{SECONDARY_BOT_TOKEN}/sendAudio"
+SECONDARY_BOT_API = "http://192.168.0.101:5000/processAudio"  # Replace <SECONDARY_BOT_IP> with the actual IP
 
 # File to store chat IDs
 CHAT_ID_FILE = "chat_ids.txt"
@@ -54,35 +59,35 @@ def save_chat_id(chat_id):
         logger.error(f"Error saving chat ID: {e}")
 
 # Function to transcribe audio locally
-def transcribe_audio(audio_path):
-    wav_path = audio_path.replace(".mp3", ".wav")
-    
+
+def transcribe_audio(file_path):
     # Convert MP3 to WAV
-    subprocess.run(["ffmpeg", "-i", audio_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path], check=True)
-    
-    logger.info("Starting transcription...")
-    result = subprocess.run(
-        ["./whisper.cpp/build/bin/whisper-cli",
-          "--model", WHISPER_MODEL, 
-          "--file", wav_path,
-          "--no-timestamps", "true",
-          "--language", "uk",
-          "--threads", THREADS], capture_output=True, text=True)
-    logger.info(f"Transcription result: {result.stdout.strip()}")
-    
-    return result.stdout.strip()
+    #wav_path = audio_path.replace(".mp3", ".wav")
+    #subprocess.run(["ffmpeg", "-i", audio_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path], check=True)
+
+    # result = subprocess.run(
+    #     ["./whisper.cpp/build/bin/whisper-cli",
+    #       "--model", WHISPER_MODEL, 
+    #       "--file", wav_path,
+    #       "--no-timestamps", "true",
+    #       "--language", "uk",
+    #       "--threads", THREADS], capture_output=True, text=True)
+
+    """Transcribe audio using the preloaded Whisper model"""
+    result = model.transcribe(file_path, language="uk")
+    return result["text"]
 
 # Function to forward request to another bot and retrieve its response
-def forward_to_secondary_bot(file_path, chat_id):
+def forward_to_secondary_bot(file_path, chat_id=None):
     try:
         with open(file_path, "rb") as audio_file:
             files = {"audio": audio_file}
-            data = {"chat_id": chat_id}
-            response = requests.post(f"https://api.telegram.org/bot{SECONDARY_BOT_TOKEN}/processAudio", files=files, data=data)
+            print("Запит")
+            response = requests.post(SECONDARY_BOT_API, files=files)
 
         if response.status_code == 200:
             json_response = response.json()
-            return json_response.get("result", {}).get("text", None)  # Extract the transcribed text
+            return json_response.get("text", None)  # Extract the transcribed text
         else:
             logger.warning(f"Secondary bot error: {response.text}")
             return None
@@ -90,21 +95,6 @@ def forward_to_secondary_bot(file_path, chat_id):
         logger.error(f"Error forwarding to secondary bot: {e}")
         return None
 
-# Shared function to process audio files
-async def process_audio_file(file_path, chat_id=None):
-    try:
-        # Try forwarding to the secondary bot first
-        if chat_id:
-            transcribed_text = forward_to_secondary_bot(file_path, chat_id)
-            if transcribed_text:
-                return f"Transcribed by secondary bot:\n{transcribed_text}"
-
-        # If the secondary bot fails or no chat_id is provided, process locally
-        text = transcribe_audio(file_path)
-        return f"Розпізнаний текст:\n{text}"
-    except Exception as e:
-        logger.error(f"Error processing audio: {e}")
-        return "Сталася помилка при обробці аудіо."
 
 # Telegram bot handler for audio files
 async def handle_audio(update: Update, context: CallbackContext) -> None:
@@ -121,8 +111,22 @@ async def handle_audio(update: Update, context: CallbackContext) -> None:
     await file_obj.download_to_drive(custom_path=file_path)
 
     await update.message.reply_text("Обробляю... Це може зайняти деякий час.")
-    result = await process_audio_file(file_path, chat_id)
-    await update.message.reply_text(result)
+    
+    # Try forwarding to the secondary bot first
+    transcribed_text = forward_to_secondary_bot(file_path, chat_id)
+    if transcribed_text:
+        await update.message.reply_text(f"Розпізнано вторинним ботом:\n{transcribed_text}")
+        return
+    
+    # If the secondary bot fails, process locally
+    try:
+        text = transcribe_audio(file_path)
+        await update.message.reply_text(f"Розпізнаний текст:\n{text}")
+    except Exception as e:
+        await update.message.reply_text("Сталася помилка під час розпізнавання аудіо.")
+        logger.error(f"Помилка: {e}")
+
+
 
 # Function for /start command
 async def start(update: Update, context: CallbackContext) -> None:
