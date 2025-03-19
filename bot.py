@@ -33,11 +33,32 @@ with open(TOKEN_FILE, "r") as f:
     TOKEN = f.read().strip()
 
 # Secondary bot details
-SECONDARY_BOT_TOKEN = "SECONDARY_BOT_TOKEN_HERE"
+# Load secondary bot token from a file
+SECONDARY_TOKEN_FILE = "second_bot_token.txt"
+if not os.path.exists(SECONDARY_TOKEN_FILE):
+    raise FileNotFoundError(f"Secondary bot token file '{SECONDARY_TOKEN_FILE}' not found.")
+with open(SECONDARY_TOKEN_FILE, "r") as f:
+    SECONDARY_BOT_TOKEN = f.read().strip()
 SECONDARY_BOT_API = f"https://api.telegram.org/bot{SECONDARY_BOT_TOKEN}/sendAudio"
+
+# File to store chat IDs
+CHAT_ID_FILE = "chat_ids.txt"
+
+# Function to save chat ID to a file
+def save_chat_id(chat_id):
+    try:
+        with open(CHAT_ID_FILE, "a") as f:
+            f.write(f"{chat_id}\n")
+        logger.info(f"Saved chat ID: {chat_id}")
+    except Exception as e:
+        logger.error(f"Error saving chat ID: {e}")
 
 # Function to forward request to another bot and retrieve its response
 def forward_to_secondary_bot(file_path, chat_id):
+    if not SECONDARY_BOT_TOKEN:
+        logger.warning("Secondary bot token is not set. Skipping request to secondary bot.")
+        return None
+
     try:
         with open(file_path, "rb") as audio_file:
             files = {"audio": audio_file}
@@ -81,22 +102,24 @@ def transcribe_audio(audio_path):
 
 # Function to handle incoming audio files
 async def handle_audio(update: Update, context: CallbackContext) -> None:
+    chat_id = update.message.chat_id
+    save_chat_id(chat_id)  # Save chat ID to file
+
     file = update.message.voice or update.message.audio
     if not file:
-      await update.message.reply_text("Надішліть голосове або аудіофайл у MP3.")
-      return
+        await update.message.reply_text("Надішліть голосове або аудіофайл у MP3.")
+        return
     file_obj = await file.get_file()
     file_path = os.path.join(AUDIO_DIR, f"{file.file_id}.mp3")
     await file_obj.download_to_drive(custom_path=file_path)
-    
+
     await update.message.reply_text("Обробляю... Це може зайняти деякий час.")
-    
     # Try forwarding to the secondary bot first
-    transcribed_text = forward_to_secondary_bot(file_path, update.message.chat_id)
+    transcribed_text = forward_to_secondary_bot(file_path, chat_id)
     if transcribed_text:
         await update.message.reply_text(f"Transcribed by secondary bot:\n{transcribed_text}")
         return
-    
+
     # If the secondary bot fails, process locally
     try:
         text = transcribe_audio(file_path)

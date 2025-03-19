@@ -3,3 +3,5 @@ bot_token.txt
 /venv
 /whisper.cpp
 model_path.txt
+second_bot_token.txt
+chat_ids.txt
