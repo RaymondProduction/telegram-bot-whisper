@@ -116,16 +116,14 @@ async def handle_audio(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Обробляю... Це може зайняти деякий час.")
     
     # Try forwarding to the secondary bot first
-    # transcribed_text = forward_to_secondary_bot(file_path, chat_id)
-    # if transcribed_text:
-    #     await update.message.reply_text(f"Розпізнано вторинним ботом:\n{transcribed_text}")
-    #     return
+    transcribed_text = forward_to_secondary_bot(file_path, chat_id)
+    if transcribed_text:
+        await send_long_message(chat_id, f"Розпізнано вторинним ботом:\n{transcribed_text}", context)
+        return
     
     # If the secondary bot fails, process locally
     try:
         text = transcribe_audio(file_path)
-        print(f"Розпізнаний текст: {text}")
-        #await update.message.reply_text(f"Розпізнаний текст:\n{text}")
         await send_long_message(chat_id, f"Розпізнаний текст:\n{text}", context)
     except Exception as e:
         await update.message.reply_text("Сталася помилка під час розпізнавання аудіо.")
