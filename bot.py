@@ -117,7 +117,7 @@ async def handle_audio(update: Update, context: CallbackContext) -> None:
     
     # Try forwarding to the secondary bot first
     transcribed_text = forward_to_secondary_bot(file_path, chat_id)
-    if transcribed_text:
+    if transcribed_text is not None:  # Only proceed if the secondary bot fails
         await send_long_message(chat_id, f"Розпізнано вторинним ботом:\n{transcribed_text}", context)
         return
     
