@@ -3,6 +3,7 @@ import subprocess
 import os
 import logging
 import requests
+import sqlite3
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import torch
@@ -24,15 +25,48 @@ model = whisper.load_model(MODEL, device = "cpu")
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Database setup
+DB_FILE = "bot_data.db"
 
-# Load model path from a file
-# MODEL_PATH_FILE = "model_path.txt"
-# if not os.path.exists(MODEL_PATH_FILE):
-#     raise FileNotFoundError(f"Model path file '{MODEL_PATH_FILE}' not found.")
-# with open(MODEL_PATH_FILE, "r") as f:
-#     WHISPER_MODEL = f.read().strip()
+def init_db():
+    """Initialize the SQLite database and create the necessary table."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            chat_id INTEGER PRIMARY KEY,
+            alias TEXT,
+            request_count INTEGER DEFAULT 0,
+            last_request TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-# logger.info(f"Loaded Whisper model path: {WHISPER_MODEL}") 
+def save_chat_id_to_db(chat_id):
+    """Save chat_id to the database if it doesn't already exist and update request info."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT OR IGNORE INTO users (chat_id, alias, request_count, last_request) 
+            VALUES (?, ?, 0, NULL)
+        """, (chat_id, None))
+        cursor.execute("""
+            UPDATE users 
+            SET request_count = request_count + 1, 
+                last_request = datetime('now') 
+            WHERE chat_id = ?
+        """, (chat_id,))
+        conn.commit()
+        conn.close()
+        logger.info(f"Saved or updated chat ID in database: {chat_id}")
+    except Exception as e:
+        logger.error(f"Error saving or updating chat ID in database: {e}")
+
+# Modify the save_chat_id function to use the updated database logic
+def save_chat_id(chat_id):
+    save_chat_id_to_db(chat_id)
 
 # Ensure the directory exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
@@ -47,20 +81,7 @@ with open(TOKEN_FILE, "r") as f:
 # Secondary bot details
 SECONDARY_BOT_API = "http://192.168.0.101:5000/processAudio"  # Replace <SECONDARY_BOT_IP> with the actual IP
 
-# File to store chat IDs
-CHAT_ID_FILE = "chat_ids.txt"
-
-# Function to save chat ID to a file
-def save_chat_id(chat_id):
-    try:
-        with open(CHAT_ID_FILE, "a") as f:
-            f.write(f"{chat_id}\n")
-        logger.info(f"Saved chat ID: {chat_id}")
-    except Exception as e:
-        logger.error(f"Error saving chat ID: {e}")
-
 # Function to transcribe audio locally
-
 def transcribe_audio(file_path):
     # Convert MP3 to WAV
     wav_path = file_path.replace(".mp3", ".wav")
@@ -102,7 +123,7 @@ def forward_to_secondary_bot(file_path, chat_id=None):
 # Telegram bot handler for audio files
 async def handle_audio(update: Update, context: CallbackContext) -> None:
     chat_id = update.message.chat_id
-    save_chat_id(chat_id)  # Save chat ID to file
+    save_chat_id(chat_id)  # Save or update chat ID in the database
 
     file = update.message.voice or update.message.audio
     if not file:
@@ -140,6 +161,7 @@ async def start(update: Update, context: CallbackContext) -> None:
 
 # Main function to run the bot
 def main():
+    init_db()  # Initialize the database
     app = Application.builder().token(TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
