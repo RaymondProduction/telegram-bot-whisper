@@ -6,3 +6,5 @@ model_path.txt
 second_bot_token.txt
 chat_ids.txt
 bot_data.db
+# Secrets
+config.json

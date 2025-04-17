@@ -1,0 +1,25 @@
+{
+    "mainBot": {
+        "token": "7854821132:AAEg3SQz2zfRgtpWM1jFEcWlf4l1Q04OnHg",
+        "model": "small",
+        "audio": {
+            "dir": "audio"
+        },
+        "threads": 8,
+        "device": "cpu",
+        "db": "bot_data.db",
+        "admin": [
+            "1000"
+        ]
+    },
+    "secondBot": {
+        "model": "large-v3-turbo",
+        "audio": {
+            "dir": "audio"
+        },
+        "threads": 18,
+        "device": "cpu",
+        "port": 5000,
+        "host": "0.0.0.0"
+    }
+}
