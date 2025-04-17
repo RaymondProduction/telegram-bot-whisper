@@ -3,27 +3,33 @@ from flask import Flask, request, jsonify
 import os
 import torch
 import logging
+import json
 
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Directory for storing audio files
-AUDIO_DIR = "audio"
-os.makedirs(AUDIO_DIR, exist_ok=True)
+# Load configuration from JSON file
+CONFIG_FILE = "config.json"
+if not os.path.exists(CONFIG_FILE):
+    raise FileNotFoundError(f"Configuration file '{CONFIG_FILE}' not found.")
+with open(CONFIG_FILE, "r") as f:
+    config = json.load(f)
 
-# Whisper model details
-#WHISPER_MODEL = "whisper.cpp/models/ggml-large-v3-turbo.bin"  # Replace with the actual path to your Whisper model
-
-# Directory for storing audio files
-AUDIO_DIR = "audio"
-MODEL = "large-v3-turbo"
-THREADS = 18  # Number of threads for Whisper
+# Use settings from the configuration
+SECOND_BOT_CONFIG = config["secondBot"]
+MODEL = SECOND_BOT_CONFIG["model"]
+AUDIO_DIR = SECOND_BOT_CONFIG["audio"]["dir"]
+THREADS = SECOND_BOT_CONFIG["threads"]
+DEVICE = SECOND_BOT_CONFIG["device"]
+PORT = SECOND_BOT_CONFIG["port"]
+HOST = SECOND_BOT_CONFIG["host"]
 
 torch.set_num_threads(THREADS)
+model = whisper.load_model(MODEL, device=DEVICE)
 
-# Load model once at startup
-model = whisper.load_model(MODEL, device = "cpu")
+# Ensure the directory exists
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -66,4 +72,4 @@ def process_audio():
 
 # Run the Flask app
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host=HOST, port=PORT)

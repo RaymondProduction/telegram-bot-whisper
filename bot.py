@@ -7,27 +7,40 @@ import sqlite3
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import torch
+import json
 
 available_models = whisper.available_models()
 print(f"Available models: {available_models}")
 
-# Directory for storing audio files
-AUDIO_DIR = "audio"
-MODEL = "small"
+# Load configuration from JSON file
+CONFIG_FILE = "config.json"
+if not os.path.exists(CONFIG_FILE):
+    raise FileNotFoundError(f"Configuration file '{CONFIG_FILE}' not found.")
+with open(CONFIG_FILE, "r") as f:
+    config = json.load(f)
 
-THREADS = 8  # Number of threads for Whisper.cpp
+# Use settings from the configuration
+MAIN_BOT_CONFIG = config["mainBot"]
+MODEL = MAIN_BOT_CONFIG["model"]
+AUDIO_DIR = MAIN_BOT_CONFIG["audio"]["dir"]
+THREADS = MAIN_BOT_CONFIG["threads"]
+DEVICE = MAIN_BOT_CONFIG["device"]
+DB_FILE = MAIN_BOT_CONFIG["db"]
+TOKEN = MAIN_BOT_CONFIG["token"]
+
 torch.set_num_threads(THREADS)
 
 # Load model once at startup
-model = whisper.load_model(MODEL, device = "cpu")
+model = whisper.load_model(MODEL, device=DEVICE)
+
+# Ensure the directory exists
+os.makedirs(AUDIO_DIR, exist_ok=True)
 
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Database setup
-DB_FILE = "bot_data.db"
-
 def init_db():
     """Initialize the SQLite database and create the necessary table."""
     conn = sqlite3.connect(DB_FILE)
@@ -67,16 +80,6 @@ def save_chat_id_to_db(chat_id):
 # Modify the save_chat_id function to use the updated database logic
 def save_chat_id(chat_id):
     save_chat_id_to_db(chat_id)
-
-# Ensure the directory exists
-os.makedirs(AUDIO_DIR, exist_ok=True)
-
-# Load bot token from a file
-TOKEN_FILE = "bot_token.txt"
-if not os.path.exists(TOKEN_FILE):
-    raise FileNotFoundError(f"Token file '{TOKEN_FILE}' not found.")
-with open(TOKEN_FILE, "r") as f:
-    TOKEN = f.read().strip()
 
 # Secondary bot details
 SECONDARY_BOT_API = "http://192.168.0.101:5000/processAudio"  # Replace <SECONDARY_BOT_IP> with the actual IP
