@@ -50,7 +50,8 @@ def init_db():
             chat_id INTEGER PRIMARY KEY,
             alias TEXT,
             request_count INTEGER DEFAULT 0,
-            last_request TEXT
+            last_request TEXT,
+            enabled INTEGER DEFAULT 1
         )
     """)
     conn.commit()
@@ -62,8 +63,8 @@ def save_chat_id_to_db(chat_id):
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT OR IGNORE INTO users (chat_id, alias, request_count, last_request) 
-            VALUES (?, ?, 0, NULL)
+            INSERT OR IGNORE INTO users (chat_id, alias, request_count, last_request, enabled) 
+            VALUES (?, ?, 0, NULL, 1)
         """, (chat_id, None))
         cursor.execute("""
             UPDATE users 
@@ -162,6 +163,42 @@ async def send_long_message(chat_id, text, context):
 async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Привіт! Надішліть MP3 або голосове повідомлення для розпізнавання.")
 
+def get_all_chat_ids_except_admin_and_disabled(admin_chat_id):
+    """Retrieve all chat IDs from the database except the admin and those not enabled."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT chat_id FROM users 
+            WHERE chat_id != ? AND enabled = 1
+        """, (admin_chat_id,))
+        chat_ids = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        return chat_ids
+    except Exception as e:
+        logger.error(f"Error retrieving chat IDs from database: {e}")
+        return []
+
+async def broadcast_message(admin_chat_id, message, context):
+    """Send a message to all users except the admin and those not enabled."""
+    chat_ids = get_all_chat_ids_except_admin_and_disabled(admin_chat_id)
+    for chat_id in chat_ids:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=message)
+        except Exception as e:
+            logger.error(f"Error sending message to chat ID {chat_id}: {e}")
+
+# Telegram bot handler for text messages
+async def handle_text(update: Update, context: CallbackContext) -> None:
+    chat_id = update.message.chat_id
+    text = update.message.text
+
+    # Check if the sender is an admin
+    if str(chat_id) in MAIN_BOT_CONFIG["admin"]:
+        await broadcast_message(chat_id, text, context)
+    else:
+        await update.message.reply_text("Ваше повідомлення отримано, але я не можу його обробити.")
+
 # Main function to run the bot
 def main():
     init_db()  # Initialize the database
@@ -169,6 +206,7 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO | filters.ATTACHMENT, handle_audio))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))  # Handle text messages
     
     print("Bot is running!")
     app.run_polling()
