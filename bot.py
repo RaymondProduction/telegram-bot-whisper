@@ -82,7 +82,7 @@ def save_chat_id(chat_id):
     save_chat_id_to_db(chat_id)
 
 # Secondary bot details
-SECONDARY_BOT_API = "http://192.168.0.101:5000/processAudio"  # Replace <SECONDARY_BOT_IP> with the actual IP
+SECONDARY_BOT_API = f"http://{MAIN_BOT_CONFIG['secondBot']['address']}:{MAIN_BOT_CONFIG['secondBot']['port']}/processAudio"
 
 # Function to transcribe audio locally
 def transcribe_audio(file_path):

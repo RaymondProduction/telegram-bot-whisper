@@ -1,9 +1,13 @@
 {
     "mainBot": {
-        "token": "7854821132:AAEg3SQz2zfRgtpWM1jFEcWlf4l1Q04OnHg",
+        "token": "your-telegram-bot-token",
         "model": "small",
         "audio": {
             "dir": "audio"
+        },
+        "secondBot": {
+            "address": "127.0.0.1",
+            "port": "5000"
         },
         "threads": 8,
         "device": "cpu",
