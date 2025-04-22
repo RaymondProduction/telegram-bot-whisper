@@ -8,6 +8,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import torch
 import json
+import re
 
 available_models = whisper.available_models()
 print(f"Available models: {available_models}")
@@ -35,6 +36,10 @@ model = whisper.load_model(MODEL, device=DEVICE)
 
 # Ensure the directory exists
 os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# Directory for storing video files
+VIDEO_DIR = "video"
+os.makedirs(VIDEO_DIR, exist_ok=True)
 
 # Configure logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -188,10 +193,66 @@ async def broadcast_message(admin_chat_id, message, context):
         except Exception as e:
             logger.error(f"Error sending message to chat ID {chat_id}: {e}")
 
+# YouTube link regex
+YOUTUBE_LINK_REGEX = r"(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+"
+
+def download_youtube_video(link):
+    """Download a YouTube video using yt-dlp."""
+    try:
+        output_template = os.path.join(VIDEO_DIR, "%(title)s.%(ext)s")
+        result = subprocess.run(
+            [
+                "yt-dlp",
+                "-f", "bestvideo+bestaudio",
+                "--merge-output-format", "mp4",
+                "--no-playlist",
+                "--write-thumbnail",
+                "--embed-thumbnail",
+                "--add-metadata",
+                "--embed-metadata",
+                "--write-description",
+                "--write-info-json",
+                "-o", output_template,
+                link
+            ],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        # Extract the output file name from yt-dlp logs
+        output_lines = result.stdout.splitlines()
+        for line in output_lines:
+            if "Merging formats into" in line:
+                return line.split('"')[1]  # Extract the file name
+        return None
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Error downloading YouTube video: {e.stderr}")
+        return None
+
+async def handle_youtube_link(update: Update, context: CallbackContext, link: str) -> None:
+    """Handle YouTube link by downloading and sending the video."""
+    await update.message.reply_text("Завантажую відео, зачекайте...")
+    video_file = download_youtube_video(link)
+    if video_file and os.path.exists(video_file):
+        try:
+            await context.bot.send_video(chat_id=update.message.chat_id, video=open(video_file, "rb"))
+        except Exception as e:
+            logger.error(f"Error sending video: {e}")
+            await update.message.reply_text("Сталася помилка під час відправлення відео.")
+        finally:
+            os.remove(video_file)  # Clean up the downloaded file
+    else:
+        await update.message.reply_text("Не вдалося завантажити відео.")
+
 # Telegram bot handler for text messages
 async def handle_text(update: Update, context: CallbackContext) -> None:
     chat_id = update.message.chat_id
     text = update.message.text
+
+    # Check if the message contains a YouTube link
+    if re.search(YOUTUBE_LINK_REGEX, text):
+        await handle_youtube_link(update, context, text)
+        return
 
     # Check if the sender is an admin
     if str(chat_id) in MAIN_BOT_CONFIG["admin"]:
